@@ -1,0 +1,9 @@
+%% -*- mode: erlang -*-
+{application, migresia,
+ [
+  {description, "Simple mnesia database migration tool"},
+  {vsn, "0.0.1"},
+  {registered, []},
+  {applications, [kernel, stdlib]}
+ ]
+}.
