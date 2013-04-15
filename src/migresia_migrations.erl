@@ -5,20 +5,20 @@
 -export([list_unapplied_ups/0]).
 
 -define(APP, migresia).
+-define(DIR, <<"migrate">>).
 -define(TABLE, schema_migrations).
 
 -spec list_unapplied_ups() -> [{module(), binary()}].
 list_unapplied_ups() ->
     application:load(?APP),
-    get_migrations(application:get_env(?APP, dir)).
+    get_migrations(filename:join(code:priv_dir(?APP), ?DIR)).
 
-get_migrations(undefined) ->
-    exit({undefined, migrate_dir});
-get_migrations({ok, Dir}) ->
+get_migrations({error, _} = Err) ->
+    exit(Err);
+get_migrations(Dir) ->
     ToApply = check_dir(file:list_dir(Dir)),
     start_mnesia(),
     Applied = check_table(),
-%%    io:format("ToApply:~n~p~nApplied:~n~p~n", [ToApply, Applied]),
     ToExecute = compile_unapplied(Dir, ToApply, Applied, []),
     Fun = fun({Module, Short, Binary}) -> load_migration(Module, Short, Binary) end,
     lists:map(Fun, ToExecute).

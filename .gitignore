@@ -1,6 +1,8 @@
-/ebin/
 .eunit
-deps
 *.o
 *.beam
 *.plt
+
+/ebin/
+/priv/migrate/
+/include/tables.hrl
