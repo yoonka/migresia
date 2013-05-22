@@ -21,10 +21,4 @@ execute_up({Module, Short}) ->
     io:format(" => done~n", []).
 
 list_nodes() ->
-    Node = node(),
-    if Node == nonode@nohost ->
-            io:format("Warning: Erlang doesn't seem to be running in distributed mode.~n", []);
-       true ->
-            ok
-    end,
-    [Node].
+    mnesia:table_info(schema, disc_copies).
