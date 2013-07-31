@@ -10,13 +10,15 @@ When migrating the database:
 1. Lists all available migrations.
 2. Checks which migrations haven't yet been applied.
 3. Compile all unapplied migrations.
-4. If compilation went OK, load all compiled migration.
-5. For each loaded migration execute their `up` / `down`\* functions (depending on the direction of the migration)
-6. Store migration as applied if it has been executed successfully.
+4. If compilation went OK, load all compiled migrations.
+5. For each loaded migration:
 
-Migresia stores all applied migrations in table `schema_migrations` which it creates in case it doesn't yet exists.
+* Execute the `up` / `down`\* function (depending on the direction of the migration).
+* Mark the migration as applied if it has been executed successfully.
 
-\* - at this moment migrating the database backward isn't yet implemented.
+\* - migrating the database backward hasn't yet been implemented.
+
+Migresia stores all applied migrations in table `schema_migrations` which it creates in case it doesn't yet exist.
 
 ## Migrations
 
@@ -28,21 +30,21 @@ When developing a new migration just use `migresia:check/0` to let Migresia to c
 
 #### Migration names
 
-The name of each migration starts with a timestamp, which is treated as its version, and ends with a short information of the purpose of that migration, for example:
+The name of each migration starts with a timestamp, which is treated as its version, and ends with a short information of the purpose of that migration. For example:
 
     20130731163300_convert_permissions.erl
 
-The timestamp is always 14 numbers but otherwise can contain any value. Migresia doesn't interpret it in any way, but it uses it to sort the migrations according to the value of that timestamp, assuming timestamps with the lower values are younger.
+The timestamp is always 14 numbers, but otherwise can contain any value. Migresia doesn't interpret it in any way, but it uses it to sort the migrations according to the value of that timestamp, assuming timestamps with the lower values are younger.
 
 The remaining part of the name, after the timestamp, is simply ignored. A migration name consisting of just the timestamp is also a valid name.
 
 #### Implementing migrations
 
-Migresia doesn't provide any special support for transactions. If any operations should be executed within a transaction, it just should be created in the `up` or `down` function.
+Migresia doesn't provide any special support for transactions. If any operations should be executed within a transaction, it just should be created and handled accordingly in the `up` or `down` function.
 
 Migresia provides a behaviour which all migrations should implement: `db_migration`. It expects two functions: `up/0` and `down/0`. Please note, that at this moment migrations can't be applied backward, so the `down/0` function is unused. However, both functions are present for completeness as it is expected that in the future Migresia will support migrating databases in both directions.
 
-Very often migrations need to know the record definitions of Mnesia tables to which the migrations will be applied. The preferred way of doing this is by creating in the Migresia `include` folder a symbolic link to the include file within the main project that contains the required record definition. By default all include files in the Migresia `include` directory are ignored. Then the linked file should be included using `include_lib`, for example:
+Very often migrations need to know the record definitions of Mnesia tables to which the migrations will be applied. The preferred way of doing this is creating in the Migresia `include` folder a symbolic link to the include file that contains the required record definition. By default the Migresia repository ignores all include files in the Migresia `include` directory. The linked file should then be included using `include_lib`, for example:
 
     -module('20130731163300_convert_permissions').
     -behaviour(db_migration).
@@ -62,20 +64,20 @@ Very often migrations need to know the record definitions of Mnesia tables to wh
 
 Migresia exports three simple functions:
 
-#### `migresia:check/0`
+##### `migresia:check/0`
 
-Works like `migresia:migrate/0` but doesn't actually apply any migrations. All it does:
+This function does three things:
 
-* create the `schema_migrations` table if it doesn't yet exists.
-* list available migrations and check which ones haven't been applied yet.
-* compile and load all unapplied migrations.
+* Create the `schema_migrations` table if it doesn't yet exist.
+* List available migrations and check which ones haven't yet been applied.
+* Compile and load all unapplied migrations.
 
-This is the method that should be used to check migrations for compilation errors as well as to verify which migrations will be applied if the Migresia is called to migrate the database.
+This is the method that should be used to check migrations for compilation errors as well as to verify which migrations will be applied if `migresia:migrate/0` is executed to migrate the database.
 
-#### `migresia:migrate/0`
+##### `migresia:migrate/0`
 
-Works almost exactly like `migresia:check/0` but in the end, instead of printing information which migrations are going to be applied, just applies them.
+Works almost exactly like `migresia:check/0` but in the end, instead of printing information which migrations are going to be applied, just applies them by executing the `up` and `down` functions as required to bring the database to the desired version.
 
-#### `migresia:list_nodes/0`
+##### `migresia:list_nodes/0`
 
 Returns the output of `mnesia:table_info(schema, disc_copies)` which could be used in migrations to migrate databases on multiple nodes.
