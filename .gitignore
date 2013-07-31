@@ -4,5 +4,5 @@
 *.plt
 
 /ebin/
-/priv/migrate/
-/include/tables.hrl
+/priv/migrate
+/include/*.hrl
