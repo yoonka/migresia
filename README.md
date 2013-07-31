@@ -7,13 +7,13 @@ A simple Erlang tool to automatically migrate Mnesia databases between versions.
 
 When migrating the database:
 
-1. Lists all available migrations.
-2. Checks which migrations haven't yet been applied.
+1. List all available migrations.
+2. Check which migrations haven't yet been applied.
 3. Compile all unapplied migrations.
-4. If compilation went OK, load all compiled migrations.
+4. If the compilation went OK, load all compiled migrations.
 5. For each loaded migration:
 
-* Execute the `up` / `down`\* function (depending on the direction of the migration).
+* Execute the `up` / `down`\* function as required to bring the database to the desired version.
 * Mark the migration as applied if it has been executed successfully.
 
 \* - migrating the database backward hasn't yet been implemented.
@@ -22,7 +22,7 @@ Migresia stores all applied migrations in table `schema_migrations` which it cre
 
 ## Migrations
 
-Each migration is an Erlang source `*.erl` file stored in folder `priv/migrate/`, where `priv` is the private folder of the Migresia application. That folder is ignored in the Migresia repository and it is recommended that `priv/migrate` is a link to a folder within the main project, of which Migresia is a dependency, where it could be kept under a version control.
+Each migration is an Erlang source `*.erl` file stored in folder `priv/migrate/`, where `priv` is the private folder of the Migresia application. That folder is ignored in the Migresia repository and it is recommended that `priv/migrate` is a link to a folder within the main project, of which Migresia is a dependency, where it should be kept under a version control.
 
 Migresia compiles the migrations automatically when it applies them, so they should be always distributed as source files. This is mainly to allow keeping applied migrations under a version control but not have to compile them every time when building the application or creating a release.
 
@@ -40,11 +40,11 @@ The remaining part of the name, after the timestamp, is simply ignored. A migrat
 
 #### Implementing migrations
 
-Migresia doesn't provide any special support for transactions. If any operations should be executed within a transaction, it just should be created and handled accordingly in the `up` or `down` function.
+Migresia doesn't provide any special support for transactions. If any operations should be executed within a transaction, it just should be created and handled accordingly in the `up` or `down` functions.
 
 Migresia provides a behaviour which all migrations should implement: `db_migration`. It expects two functions: `up/0` and `down/0`. Please note, that at this moment migrations can't be applied backward, so the `down/0` function is unused. However, both functions are present for completeness as it is expected that in the future Migresia will support migrating databases in both directions.
 
-Very often migrations need to know the record definitions of Mnesia tables to which the migrations will be applied. The preferred way of doing this is creating in the Migresia `include` folder a symbolic link to the include file that contains the required record definition. By default the Migresia repository ignores all include files in the Migresia `include` directory. The linked file should then be included using `include_lib`, for example:
+Very often migrations need to know the record definitions of Mnesia tables to which the migrations will be applied. The preferred way of doing this is by creating in the Migresia `include` folder a symbolic link to the include file that contains the required record definition. By default the Migresia repository ignores all include files in the Migresia `include` directory. The linked file should then be included using `include_lib`, for example:
 
     -module('20130731163300_convert_permissions').
     -behaviour(db_migration).
@@ -76,7 +76,7 @@ This is the method that should be used to check migrations for compilation error
 
 ##### `migresia:migrate/0`
 
-Works almost exactly like `migresia:check/0` but in the end, instead of printing information which migrations are going to be applied, just applies them by executing the `up` and `down` functions as required to bring the database to the desired version.
+Works almost exactly like `migresia:check/0` but in the end, instead of printing information which migrations are going to be applied, just applies them by executing the required `up` or `down` functions.
 
 ##### `migresia:list_nodes/0`
 
