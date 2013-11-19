@@ -24,19 +24,41 @@
 
 -module(migresia).
 
--export([check/0, migrate/0, list_nodes/0]).
+-export([create_new_migration/1, create_new_migration/2, check/0, check/1, migrate/0, migrate/1, list_nodes/0]).
 
-check() ->
-    Loaded = migresia_migrations:list_unapplied_ups(),
+-spec create_new_migration(string()) -> any().
+create_new_migration(Description) ->
+    create_new_migration(undefined, Description).
+
+-spec create_new_migration(atom(), string()) -> any().
+create_new_migration(App, Description) ->
+    {{Year, Month, Day}, {Hour, Minute, Second}} = calendar:local_time(),
+    Filename = lists:flatten(io_lib:format("~w~2.2.0w~2.2.0w~2.2.0w~2.2.0w~2.2.0w_", [Year, Month, Day, Hour, Minute, Second]) ++ Description),
+    FullPathAndExtension = filename:join(migresia_migrations:get_priv_dir(App), Filename ++ ".erl"),
+    io:format("Creating new migration: ~p~n", [FullPathAndExtension]),
+    file:write_file(FullPathAndExtension, io_lib:fwrite("-module(~p).~n-behavior(db_migration).~n-export([up/0, down/0]). ~n~nup() -> ok.~n~ndown() -> throw(<<\"Downgraders not implemented.\">>)", [list_to_atom(Filename)])),
+    io:format("Migration written.~n~n").
+
+-spec check(atom()) -> any().
+check(App) ->
+    Loaded = migresia_migrations:list_unapplied_ups(App),
     if Loaded == [] ->
             io:format("No migrations to apply.~n", []);
        true ->
             io:format("Migrations to apply: ~p~n", [ [X||{X,_} <- Loaded] ])
     end.
 
-migrate() ->
-    Loaded = migresia_migrations:list_unapplied_ups(),
+-spec check() -> any().
+check() -> check(undefined).
+
+-spec migrate(atom()) -> any().
+migrate(App) ->
+    Loaded = migresia_migrations:list_unapplied_ups(App),
     lists:foreach(fun execute_up/1, Loaded).
+
+-spec migrate() -> any().
+migrate() ->
+    migrate(undefined).
 
 execute_up({Module, Short}) ->
     io:format("Executing up in ~s...~n", [Module]),
@@ -46,3 +68,4 @@ execute_up({Module, Short}) ->
 
 list_nodes() ->
     mnesia:table_info(schema, disc_copies).
+

@@ -22,11 +22,11 @@ Migresia stores all applied migrations in table `schema_migrations` which it cre
 
 ## Migrations
 
-Each migration is an Erlang source `*.erl` file stored in folder `priv/migrate/`, where `priv` is the private folder of the Migresia application. That folder is ignored in the Migresia repository and it is recommended that `priv/migrate` is a link to a folder within the main project, of which Migresia is a dependency, where it should be kept under a version control.
+Each migration is an Erlang source `*.erl` file stored either in folder `priv/migrate/`, where `priv` is the private folder of the Migresia application, or under the priv directory of your application. If that folder is under Migresia's priv directory you will not need to pass in an application when calling Migresia; if it's under your own project you will.
 
 Migresia compiles the migrations automatically when it applies them, so they should be always distributed as source files. This is mainly to allow keeping applied migrations under a version control but not have to compile them every time when building the application or creating a release.
 
-When developing a new migration just use `migresia:check/0` to let Migresia to compile them and report any problems.
+When developing a new migration just use `migresia:check/0` or `migresia:check/1` to let Migresia try to compile them and report any problems.
 
 #### Migration names
 
@@ -37,6 +37,8 @@ The name of each migration starts with a timestamp, which is treated as its vers
 The timestamp is always 14 numbers, but otherwise can contain any value. Migresia doesn't interpret it in any way, but it uses it to sort the migrations according to the value of that timestamp, assuming timestamps with the lower values are younger.
 
 The remaining part of the name, after the timestamp, is simply ignored. A migration name consisting of just the timestamp is also a valid name.
+
+You can generate a timestamped stub using `migresia:create_new_migration/1` or `migresia:create_new_migration/2`
 
 #### Implementing migrations
 
@@ -62,9 +64,14 @@ Very often migrations need to know the record definitions of Mnesia tables to wh
 
 ## API Calls
 
-Migresia exports three simple functions:
+Migresia exports 6 functions. All functions can take an optional first parameter of an application name (as an atom) if you want your migrations to be under your application rather than Migresia:
 
-##### `migresia:check/0`
+
+##### `migresia:create_new_migration/1` and `migresia:create_new_migration/2`
+
+Creates a stubbed out migration file for you. The last argument is the name you want appended after the timestamp.
+
+##### `migresia:check/0` or `migresia:check/1`
 
 This function does three things:
 
@@ -72,11 +79,11 @@ This function does three things:
 * List available migrations and check which ones haven't yet been applied.
 * Compile and load all unapplied migrations.
 
-This is the method that should be used to check migrations for compilation errors as well as to verify which migrations will be applied if `migresia:migrate/0` is executed to migrate the database.
+This is the method that should be used to check migrations for compilation errors as well as to verify which migrations will be applied if `migresia:migrate/1` is executed to migrate the database.
 
-##### `migresia:migrate/0`
+##### `migresia:migrate/0` or `migresia:migrate/1` 
 
-Works almost exactly like `migresia:check/0` but in the end, instead of printing information which migrations are going to be applied, just applies them by executing the required `up` or `down` functions.
+Works almost exactly like `migresia:check/1` but in the end, instead of printing information which migrations are going to be applied, just applies them by executing the required `up` or `down` functions.
 
 ##### `migresia:list_nodes/0`
 

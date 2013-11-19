@@ -26,16 +26,24 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--export([list_unapplied_ups/0]).
+-export([list_unapplied_ups/1, get_priv_dir/1]).
 
 -define(APP, migresia).
 -define(DIR, <<"migrate">>).
 -define(TABLE, schema_migrations).
 
--spec list_unapplied_ups() -> [{module(), binary()}].
-list_unapplied_ups() ->
-    application:load(?APP),
-    get_migrations(filename:join(code:priv_dir(?APP), ?DIR)).
+-spec list_unapplied_ups(atom()) -> [{module(), binary()}].
+list_unapplied_ups(App) when App == undefined ->
+    list_unapplied_ups(?APP);
+list_unapplied_ups(App) ->
+    get_migrations(get_priv_dir(App)).
+
+
+get_priv_dir(App) when App == undefined ->
+    get_priv_dir(?APP);
+get_priv_dir(App) ->
+    application:load(App),
+    filename:join(code:priv_dir(App), ?DIR).
 
 get_migrations({error, _} = Err) ->
     exit(Err);
