@@ -48,6 +48,7 @@ get_priv_dir(App) ->
 get_migrations({error, _} = Err) ->
     exit(Err);
 get_migrations(Dir) ->
+    io:format("DIR: ~p~n~n", [Dir]),
     ToApply = check_dir(file:list_dir(Dir)),
     start_mnesia(),
     Applied = check_table(),

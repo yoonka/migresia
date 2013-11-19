@@ -36,7 +36,7 @@ create_new_migration(App, Description) ->
     Filename = lists:flatten(io_lib:format("~w~2.2.0w~2.2.0w~2.2.0w~2.2.0w~2.2.0w_", [Year, Month, Day, Hour, Minute, Second]) ++ Description),
     FullPathAndExtension = filename:join(migresia_migrations:get_priv_dir(App), Filename ++ ".erl"),
     io:format("Creating new migration: ~p~n", [FullPathAndExtension]),
-    file:write_file(FullPathAndExtension, io_lib:fwrite("-module(~p).~n-behavior(db_migration).~n-export([up/0, down/0]). ~n~nup() -> ok.~n~ndown() -> throw(<<\"Downgraders not implemented.\">>)", [list_to_atom(Filename)])),
+    file:write_file(FullPathAndExtension, io_lib:fwrite("-module(~p).~n-behavior(db_migration).~n-export([up/0, down/0]). ~n~nup() -> ok.~n~ndown() -> throw(<<\"Downgraders not implemented.\">>).", [list_to_atom(Filename)])),
     io:format("Migration written.~n~n").
 
 -spec check(atom()) -> any().
