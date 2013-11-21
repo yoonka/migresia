@@ -37,6 +37,7 @@ list_unapplied_ups(App) ->
 get_priv_dir(App) ->
     case application:load(App) of
         ok -> filename:join(code:priv_dir(App), ?DIR);
+        {error, {already_loaded, App}} ->  filename:join(code:priv_dir(App), ?DIR);
         Error -> Error
     end.
 
