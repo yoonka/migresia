@@ -47,7 +47,7 @@ ensure_schema_table_exists() ->
     case lists:member(?TABLE, mnesia:system_info(tables)) of
         true -> ok;
         false -> io:format("Table schema_migration not found, creating...~n", []),
-                 Attr = [{type, ordered_set}, {disc_copies, migresia:list_disc_copy_nodes()}],
+                 Attr = [{type, ordered_set}, {disc_copies, migresia:list_nodes()}],
                  case mnesia:create_table(?TABLE, Attr) of
                      {atomic, ok}      -> io:format(" => created~n", []), ok;
                      {aborted, Reason} -> {error, Reason}
