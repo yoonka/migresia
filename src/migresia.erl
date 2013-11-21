@@ -24,7 +24,7 @@
 
 -module(migresia).
 
--export([create_new_migration/2, check/1, migrate/1, list_disc_copy_nodes/0]).
+-export([create_new_migration/2, check/1, migrate/1, list_nodes/0]).
 
 -define(TABLE, schema_migrations).
 
@@ -82,7 +82,7 @@ start_mnesia(RemoteToo) ->
         ok -> 
             case RemoteToo of
                 false -> ok;
-                true -> {ResultList, BadNodes} = rpc:multicall(list_disc_copy_nodes(), application, ensure_started, [mnesia]),
+                true -> {ResultList, BadNodes} = rpc:multicall(list_nodes(), application, ensure_started, [mnesia]),
                     BadStatuses = [X || X <- ResultList, X /= ok],
                     if BadNodes /= [] -> io:format(" => Error:~p~n", [not_all_nodes_running]), {error, not_all_nodes_running};
                         BadStatuses /= [] -> io:format(" => Error:~p~n", [BadStatuses]), {error, BadStatuses};
@@ -91,5 +91,5 @@ start_mnesia(RemoteToo) ->
             end
     end.
 
-list_disc_copy_nodes() -> 
+list_nodes() -> 
     mnesia:table_info(schema, disc_copies).
