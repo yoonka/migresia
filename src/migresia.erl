@@ -24,7 +24,7 @@
 
 -module(migresia).
 
--export([create_new_migration/2, check/1, migrate/1, list_nodes/0]).
+-export([create_new_migration/2, check/1, migrate/1, list_nodes/0, ensure_started/1]).
 
 -define(TABLE, schema_migrations).
 
@@ -77,12 +77,12 @@ execute_up({Module, Short}) ->
 -spec start_mnesia(boolean()) -> ok | {error, any()}.
 start_mnesia(RemoteToo) ->
     io:format("Starting Mnesia...~n", []),
-    case application:ensure_started(mnesia) of
+    case ensure_started(mnesia) of
         Other when Other /= ok -> io:format(" => Error:~p~n", [Other]), Other;
         ok -> 
             case RemoteToo of
                 false -> ok;
-                true -> {ResultList, BadNodes} = rpc:multicall(list_nodes(), application, ensure_started, [mnesia]),
+                true -> {ResultList, BadNodes} = rpc:multicall(list_nodes(), migresia, ensure_started, [mnesia]),
                     BadStatuses = [X || X <- ResultList, X /= ok],
                     if BadNodes /= [] -> io:format(" => Error:~p~n", [not_all_nodes_running]), {error, not_all_nodes_running};
                         BadStatuses /= [] -> io:format(" => Error:~p~n", [BadStatuses]), {error, BadStatuses};
@@ -93,3 +93,11 @@ start_mnesia(RemoteToo) ->
 
 list_nodes() -> 
     mnesia:table_info(schema, disc_copies).
+
+-spec ensure_started(atom()) -> ok | {error, any()}. 
+ensure_started(App) ->
+    case application:start(App) of
+        ok -> ok;
+        {error,{already_started,App}} -> ok;
+        A -> A
+    end.
