@@ -68,7 +68,7 @@ get_migrations(Dir) ->
     end.
 
 check_dir({error, Reason}) ->
-    exit({file, list_dir, Reason});
+    throw({file, list_dir, Reason});
 check_dir({ok, Filenames}) ->
     normalize_names(Filenames, []).
 
@@ -80,8 +80,9 @@ normalize_names([<<Short:14/bytes, $_, R/binary>> = Name|T], Acc)
     normalize_names(T, [{Short, Base}|Acc]);
 normalize_names([Name|T], Acc) when is_list(Name) ->
     normalize_names([list_to_binary(Name)|T], Acc);
-normalize_names([Name|_], _Acc) ->
-    exit({badmatch, Name});
+normalize_names([Name|T], Acc) ->
+    io:format("Ignoring: ~p~n", [Name]),
+    normalize_names(T, Acc);
 normalize_names([], Acc) ->
     lists:sort(Acc).
 
@@ -129,10 +130,10 @@ compile_file(Dir, Short, Name) ->
             {Module, Short, Binary};
         {error, Errors, Warnings} ->
             io:format("Warnings: ~p~nErrors: ~p~nExiting...~n", [Warnings, Errors]),
-            exit(Errors);
+            throw(Errors);
         error ->
             io:format("Unknown error encoutered, Exiting...~n", []),
-            exit({compile, file, error})
+            throw({compile, file, error})
     end.
 
 load_migration(Module, Short, Binary) ->
@@ -140,6 +141,6 @@ load_migration(Module, Short, Binary) ->
         {module, Module} ->
             {Module, Short};
         {error, What} ->
-            exit({code, load_binary, What})
+            throw({code, load_binary, What})
     end.
 
