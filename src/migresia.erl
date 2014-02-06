@@ -58,6 +58,8 @@ migrate(App) ->
         ok ->
             case migresia_migrations:ensure_schema_table_exists() of
                 ok ->
+                    io:format("Waiting for tables (max timeout 2 minutes)...", []),
+                    ok = mnesia:wait_for_tables(mnesia:system_info(tables), 120000),
                     rpc:multicall(migresia_migrations, list_unapplied_ups, [App]), %Basically just to ensure everybody has loaded all the migrations, which is necessary in distributed Mnesia transforms.
                     Loaded = migresia_migrations:list_unapplied_ups(App),
                     lists:foreach(fun execute_up/1, Loaded);
