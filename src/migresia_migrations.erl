@@ -24,7 +24,7 @@
 
 -module(migresia_migrations).
 
--export([list_unapplied_ups/1, get_priv_dir/1, ensure_schema_table_exists/0]).
+-export([list_unapplied_ups/1, list_all_ups/1, get_priv_dir/1, ensure_schema_table_exists/0]).
 
 -define(DIR, <<"migrate">>).
 -define(TABLE, schema_migrations).
@@ -32,6 +32,9 @@
 -spec list_unapplied_ups(atom()) -> [{module(), binary()}].
 list_unapplied_ups(App) ->
     get_migrations(get_priv_dir(App)).
+
+list_all_ups(App) ->
+    get_all_migrations(get_priv_dir(App)).
 
 -spec get_priv_dir(atom()) -> binary().
 get_priv_dir(App) ->
@@ -66,6 +69,12 @@ get_migrations(Dir) ->
             Fun = fun({Module, Short, Binary}) -> load_migration(Module, Short, Binary) end,
             lists:map(Fun, ToExecute)
     end.
+
+get_all_migrations(Dir) ->
+    ToApply = lists:sort(check_dir(file:list_dir(Dir))),
+    ToExecute = compile_unapplied(Dir, ToApply, [], []),
+    Fun = fun({Module, Short, Binary}) -> load_migration(Module, Short, Binary) end,
+    lists:map(Fun, ToExecute).
 
 check_dir({error, Reason}) ->
     throw({file, list_dir, Reason});

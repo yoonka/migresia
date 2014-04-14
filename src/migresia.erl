@@ -24,7 +24,7 @@
 
 -module(migresia).
 
--export([create_new_migration/2, check/1, migrate/1, list_nodes/0, ensure_started/1]).
+-export([create_new_migration/2, check/1, migrate/1, rollback/2, list_nodes/0, ensure_started/1]).
 
 -define(TABLE, schema_migrations).
 
@@ -68,13 +68,33 @@ migrate(App) ->
         {error, Error} -> {error, Error}
     end.
 
+-spec rollback(atom(), integer()) -> ok | {error, any()}.
+rollback(App, Time) ->
+    case start_mnesia(true) of
+        ok ->
+            case migresia_migrations:ensure_schema_table_exists() of
+                ok ->
+                    io:format("Waiting for tables (max timeout 2 minutes)...", []),
+                    ok = mnesia:wait_for_tables(mnesia:system_info(tables), 120000),
+                    rpc:multicall(migresia_migrations, list_all_ups, [App]), %Basically just to ensure everybody has loaded all the migrations, which is necessary in distributed Mnesia transforms.
+                    ToRollBack = lists:reverse([X || X<- migresia_migrations:list_all_ups(App), binary_to_integer(element(2, X)) > Time]),
+                    lists:foreach(fun execute_down/1, ToRollBack);
+                {error, Error} -> Error
+            end;
+        {error, Error} -> {error, Error}
+    end.    
+
 execute_up({Module, Short}) ->
     io:format("Executing up in ~s...~n", [Module]),
     Module:up(),
     mnesia:dirty_write(schema_migrations, {schema_migrations, Short, true}),
     io:format(" => done~n", []).
 
-
+execute_down({Module, Time}) ->
+    io:format("Executing down in ~s...~n", [Module]),
+    Module:down(),
+    mnesia:dirty_delete(schema_migrations, Time), 
+    io:format(" => done~n", []).
 
 -spec start_mnesia(boolean()) -> ok | {error, any()}.
 start_mnesia(RemoteToo) ->
