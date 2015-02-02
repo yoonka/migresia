@@ -3,6 +3,17 @@ Migresia
 
 A simple Erlang tool to automatically migrate Mnesia databases between versions. It's loosely based on Active Record Migrations from Ruby on Rails.
 
+### Main Variations In This Fork
+This fork contains four main differences from yoonka's:
+
+1. All main functions now require an application name. This is to keep source files tied to applications, and allow them to be version controlled separately from each other and the Migresia dependency.
+
+2. Functions have largely been re-written to return values, rather than simply print or throw. 
+
+3. Multiple nodes are supported. check/1 will return the list of migrations still to be run so long as Mnesia knows itself to be consistent. migrate/1 will perform migrations across distributed nodes provided all of them are up at the time it is called; it will return an error if any nodes are down.
+
+4. The function create_new_migration/2 was added to make creating timestamped files a bit easier.
+
 ## How it works
 
 When migrating the database:
@@ -22,11 +33,11 @@ Migresia stores all applied migrations in table `schema_migrations` which it cre
 
 ## Migrations
 
-Each migration is an Erlang source `*.erl` file stored in folder `priv/migrate/`, where `priv` is the private folder of the Migresia application. That folder is ignored in the Migresia repository and it is recommended that `priv/migrate` is a link to a folder within the main project, of which Migresia is a dependency, where it should be kept under a version control.
+Each migration is an Erlang source `*.erl` file stored  in folder `priv/migrate/`, under a given application.
 
 Migresia compiles the migrations automatically when it applies them, so they should be always distributed as source files. This is mainly to allow keeping applied migrations under a version control but not have to compile them every time when building the application or creating a release.
 
-When developing a new migration just use `migresia:check/0` to let Migresia to compile them and report any problems.
+When developing a new migration just use  `migresia:check/1` to let Migresia try to compile them and report any problems.
 
 #### Migration names
 
@@ -37,6 +48,8 @@ The name of each migration starts with a timestamp, which is treated as its vers
 The timestamp is always 14 numbers, but otherwise can contain any value. Migresia doesn't interpret it in any way, but it uses it to sort the migrations according to the value of that timestamp, assuming timestamps with the lower values are younger.
 
 The remaining part of the name, after the timestamp, is simply ignored. A migration name consisting of just the timestamp is also a valid name.
+
+You can generate a timestamped stub using `migresia:create_new_migration/2`
 
 #### Implementing migrations
 
@@ -62,22 +75,26 @@ Very often migrations need to know the record definitions of Mnesia tables to wh
 
 ## API Calls
 
-Migresia exports three simple functions:
+Migresia exports 6 functions. All functions can take an optional first parameter of an application name (as an atom) if you want your migrations to be under your application rather than Migresia:
 
-##### `migresia:check/0`
 
-This function does three things:
+##### `migresia:create_new_migration/2`
 
-* Create the `schema_migrations` table if it doesn't yet exist.
-* List available migrations and check which ones haven't yet been applied.
-* Compile and load all unapplied migrations.
+Creates a stubbed out migration file for you. The last argument is the name you want appended after the timestamp. No validation or checking occurs on this, so it should generally avoid spaces and punctuation.
 
-This is the method that should be used to check migrations for compilation errors as well as to verify which migrations will be applied if `migresia:migrate/0` is executed to migrate the database.
+##### `migresia:check/1`
 
-##### `migresia:migrate/0`
+This function does two things:
 
-Works almost exactly like `migresia:check/0` but in the end, instead of printing information which migrations are going to be applied, just applies them by executing the required `up` or `down` functions.
+* Compile and loads all unapplied migrations.
+* Returns a list of all unapplied migrations, or a reason why it was unable to get this list.
 
-##### `migresia:list_nodes/0`
+This is the method that should be used to check migrations for compilation errors as well as to verify which migrations will be applied if `migresia:migrate/1` is executed to migrate the database.
+
+##### `migresia:migrate/1` 
+
+Works almost exactly like `migresia:check/1` but in the end, instead of printing information which migrations are going to be applied, just applies them by executing the required `up` or `down` functions.
+
+##### `migresia:list_disc_copy_nodes/0`
 
 Returns the output of `mnesia:table_info(schema, disc_copies)` which could be used in migrations to migrate databases on multiple nodes.

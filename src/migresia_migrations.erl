@@ -24,31 +24,60 @@
 
 -module(migresia_migrations).
 
--include_lib("eunit/include/eunit.hrl").
+-export([list_unapplied_ups/1, list_all_ups/1, get_priv_dir/1, ensure_schema_table_exists/0]).
 
--export([list_unapplied_ups/0]).
-
--define(APP, migresia).
 -define(DIR, <<"migrate">>).
 -define(TABLE, schema_migrations).
 
--spec list_unapplied_ups() -> [{module(), binary()}].
-list_unapplied_ups() ->
-    application:load(?APP),
-    get_migrations(filename:join(code:priv_dir(?APP), ?DIR)).
+-spec list_unapplied_ups(atom()) -> [{module(), binary()}].
+list_unapplied_ups(App) ->
+    get_migrations(get_priv_dir(App)).
 
+list_all_ups(App) ->
+    get_all_migrations(get_priv_dir(App)).
+
+-spec get_priv_dir(atom()) -> binary().
+get_priv_dir(App) ->
+    case application:load(App) of
+        ok -> filename:join(code:priv_dir(App), ?DIR);
+        {error, {already_loaded, App}} ->  filename:join(code:priv_dir(App), ?DIR);
+        Error -> Error
+    end.
+
+
+-spec ensure_schema_table_exists() -> ok | {error, any()}.
+ensure_schema_table_exists() ->
+    case lists:member(?TABLE, mnesia:system_info(tables)) of
+        true -> ok;
+        false -> io:format("Table schema_migration not found, creating...~n", []),
+                 Attr = [{type, ordered_set}, {disc_copies, migresia:list_nodes()}],
+                 case mnesia:create_table(?TABLE, Attr) of
+                     {atomic, ok}      -> io:format(" => created~n", []), ok;
+                     {aborted, Reason} -> {error, Reason}
+                 end
+    end.
+
+-spec get_migrations({error, any()} | binary()) -> list().
 get_migrations({error, _} = Err) ->
-    exit(Err);
+    {error, Err};
 get_migrations(Dir) ->
     ToApply = check_dir(file:list_dir(Dir)),
-    start_mnesia(),
-    Applied = check_table(),
-    ToExecute = compile_unapplied(Dir, ToApply, Applied, []),
+    case check_table() of
+        {error, Error} -> {error, Error};
+        Applied when is_list(Applied) ->
+            ToExecute = compile_unapplied(Dir, ToApply, Applied, []),
+            Fun = fun({Module, Short, Binary}) -> load_migration(Module, Short, Binary) end,
+            lists:map(Fun, ToExecute)
+    end.
+
+get_all_migrations(Dir) ->
+    ToApply = lists:sort(check_dir(file:list_dir(Dir))),
+    ToExecute = compile_unapplied(Dir, ToApply, [], []),
     Fun = fun({Module, Short, Binary}) -> load_migration(Module, Short, Binary) end,
     lists:map(Fun, ToExecute).
 
 check_dir({error, Reason}) ->
-    exit({file, list_dir, Reason});
+    throw({file, list_dir, Reason});
 check_dir({ok, Filenames}) ->
     normalize_names(Filenames, []).
 
@@ -60,38 +89,29 @@ normalize_names([<<Short:14/bytes, $_, R/binary>> = Name|T], Acc)
     normalize_names(T, [{Short, Base}|Acc]);
 normalize_names([Name|T], Acc) when is_list(Name) ->
     normalize_names([list_to_binary(Name)|T], Acc);
-normalize_names([Name|_], _Acc) ->
-    exit({badmatch, Name});
+normalize_names([Name|T], Acc) ->
+    io:format("Ignoring: ~p~n", [Name]),
+    normalize_names(T, Acc);
 normalize_names([], Acc) ->
     lists:sort(Acc).
 
-start_mnesia() ->
-    io:format("Starting Mnesia...~n", []),
-    case mnesia:start() of
-        ok    -> io:format(" => started~n", []);
-        Other -> io:format(" => Error:~p~nExiting...~n", [Other]), exit(Other)
-    end.
 
 check_table() ->
     case lists:member(?TABLE, mnesia:system_info(tables)) of
         false ->
-            create_migration_table();
+            [];
         true ->
             io:format("Waiting for tables...~n", []),
-            ok = mnesia:wait_for_tables([?TABLE], 5000),
-            io:format(" => done~n", []),
-            Select = [{{?TABLE,'_','_'},[],['$_']}],
-            List = mnesia:dirty_select(?TABLE, Select),
-            [ X || {schema_migrations, X, true} <- List ]
+            case mnesia:wait_for_tables([?TABLE], 5000) of
+                ok ->
+                    io:format(" => done~n", []),
+                    Select = [{{?TABLE,'_','_'},[],['$_']}],
+                    List = mnesia:dirty_select(?TABLE, Select),
+                    [ X || {schema_migrations, X, true} <- List ];
+                Error -> {error, Error}
+            end
     end.
 
-create_migration_table() ->
-    io:format("Table schema_migration not found, creating...~n", []),
-    Attr = [{type, ordered_set}, {disc_copies, migresia:list_nodes()}],
-    case mnesia:create_table(?TABLE, Attr) of
-        {atomic, ok}      -> io:format(" => created~n", []), [];
-        {aborted, Reason} -> exit({mnesia, create_table, Reason})
-    end.
 
 compile_unapplied(Dir, [{Short, Module}|TN], [] = Old, Acc) ->
     compile_unapplied(Dir, TN, Old, [compile_file(Dir, Short, Module)|Acc]);
@@ -119,10 +139,10 @@ compile_file(Dir, Short, Name) ->
             {Module, Short, Binary};
         {error, Errors, Warnings} ->
             io:format("Warnings: ~p~nErrors: ~p~nExiting...~n", [Warnings, Errors]),
-            exit(Errors);
+            throw(Errors);
         error ->
             io:format("Unknown error encoutered, Exiting...~n", []),
-            exit({compile, file, error})
+            throw({compile, file, error})
     end.
 
 load_migration(Module, Short, Binary) ->
@@ -130,16 +150,6 @@ load_migration(Module, Short, Binary) ->
         {module, Module} ->
             {Module, Short};
         {error, What} ->
-            exit({code, load_binary, What})
+            throw({code, load_binary, What})
     end.
 
-%%% Some unit tests
-
-normalize_test() ->
-    [{<<"20130401120000">>, <<"20130401120000">>},
-     {<<"20130402000000">>, <<"20130402000000_">>},
-     {<<"20130403080910">>, <<"20130403080910_test">>}] =
-        normalize_names(
-          [<<"20130402000000_.erl">>,
-           "20130403080910_test.erl",
-           <<"20130401120000.erl">>], []).
