@@ -1,0 +1,51 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! -smp enable
+
+template(Name) ->
+    [
+     "-module('" ++ Name ++ "').",
+     "-behavior(db_migration).",
+     "-export([up/0, down/0]).",
+     "",
+     "up() ->",
+     "    ok.",
+     "",
+     "down() ->",
+     "    ok."
+    ].
+
+usage() ->
+    [
+     "************************************************************************",
+     "This script can be used to create a new migration from a template.",
+     "It automatically calculates a new timestamp to use with the migration",
+     "and appends the provided description to the name of the migration.",
+     "",
+     "Usage:",
+     "    new_migration.esh [ -h | description ]",
+     "",
+     "  -h",
+     "    This help.",
+     "",
+     "  description",
+     "    Will be added as the file name after the timestamp, e.g.:",
+     "    20130731163300_convert_permissions.erl",
+     "************************************************************************"
+    ].
+
+main([]) -> print_usage();
+main(["-h"]) -> print_usage();
+main([Description]) ->
+    {{Year, Month, Day}, {Hour, Minute, Second}} = calendar:local_time(),
+    Args = [Year, Month, Day, Hour, Minute, Second, Description],
+    Name = "~w~2.2.0w~2.2.0w~2.2.0w~2.2.0w~2.2.0w_~s",
+    Module = lists:flatten(io_lib:format(Name, Args)),
+    FileName = Module ++ ".erl",
+    io:format("Creating new migration: '~p'~n", [FileName]),
+    Template = [X ++ "\n" || X <- template(Module)],
+    ok = file:write_file(FileName, Template),
+    io:format("Done.~n", []).
+
+print_usage() ->
+    [io:format(X ++ "~n", []) || X <- usage()].

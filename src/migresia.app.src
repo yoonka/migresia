@@ -27,7 +27,7 @@
 {application, migresia,
  [
   {description, "Simple mnesia database migration tool"},
-  {vsn, "0.0.1"},
+  {vsn, "0.0.2"},
   {registered, []},
   {applications, [kernel, stdlib]}
  ]
