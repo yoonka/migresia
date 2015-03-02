@@ -108,7 +108,7 @@ rollback(ok, App, Time) ->
     %% Load the transform function on all nodes, see:
     %% http://toddhalfpenny.com/2012/05/21/possible-erlang-bad-transform-function-solution/
     rpc:multicall(nodes(), migresia_migrations, list_all_ups, [App]),
-    ToRollBack = lists:reverse([X || {_, Ts, _} = X <- Ups, Ts > Time]),
+    ToRollBack = lists:reverse([X || {_, Ts} = X <- Ups, Ts > Time]),
     lists:foreach(fun migresia_migrations:execute_down/1, ToRollBack);
 rollback({error, _} = Err, _App, _Time) ->
     Err.
