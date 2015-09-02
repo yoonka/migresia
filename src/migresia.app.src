@@ -27,7 +27,8 @@
 {application, migresia,
  [
   {description, "Simple mnesia database migration tool"},
-  {vsn, "0.0.2"},
+  {vsn, "0.0.3"},
+  {modules, [migresia, migresia_migrations]},
   {registered, []},
   {applications, [kernel, stdlib]}
  ]

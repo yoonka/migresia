@@ -1,0 +1,11 @@
+%% -*- mode: erlang -*-
+{"0.0.3",
+ [{"0.0.2",
+   [{load_module, migresia_migrations},
+    {load_module, migresia}
+   ]}],
+ [{"0.0.2",
+   [{load_module, migresia_migrations},
+    {load_module, migresia}
+   ]}]
+}.
