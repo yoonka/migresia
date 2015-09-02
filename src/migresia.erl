@@ -27,7 +27,9 @@
 -export([start_all_mnesia/0,
          ensure_started/1,
          check/1,
+         migrate/0,
          migrate/1,
+         rollback/1,
          rollback/2,
          list_nodes/0]).
 
@@ -80,35 +82,63 @@ check(App) ->
 
 %%------------------------------------------------------------------------------
 
--spec migrate(atom()) -> ok | {error, any()}.
-migrate(App) ->
-    migrate(migresia_migrations:init_migrations(), App).
+-type migration_dir() :: default | file:filename().
+-type migration_source() :: atom() | {rel_relative_dir, migration_dir()}.
+-type migration_sources() :: migration_source(). %% | [migration_source()].
 
-migrate(ok, App) ->
-    io:format("Waiting for tables (max timeout 2 minutes)...", []),
+-spec migrate() -> ok | {error, any()}.
+migrate() ->
+    migrate({rel_relative_dir, default}).
+
+-spec migrate(migration_sources()) -> ok | {error, any()}.
+migrate(Srcs) ->
+    try
+        ok = migresia_migrations:init_migrations(),
+        migrate1(Srcs)
+    catch
+        throw:{error, _} = Err -> Err
+    end.
+
+migrate1(Srcs) ->
+    io:format("Waiting for tables (max timeout 2 minutes)...~n", []),
     ok = mnesia:wait_for_tables(mnesia:system_info(tables), 120000),
-    Loaded = migresia_migrations:list_unapplied_ups(App),
+    case migresia_migrations:list_unapplied_ups(Srcs) of
+        {error, _} = Err -> Err;
+        Loaded -> apply_ups(Srcs, Loaded)
+    end.
+
+apply_ups(Srcs, Loaded) ->
     %% Load the transform function on all nodes, see:
     %% http://toddhalfpenny.com/2012/05/21/possible-erlang-bad-transform-function-solution/
-    rpc:multicall(nodes(), migresia_migrations, list_unapplied_ups, [App]),
-    lists:foreach(fun migresia_migrations:execute_up/1, Loaded);
-migrate({error, _} = Err, _) ->
-    Err.
+    rpc:multicall(nodes(), migresia_migrations, list_unapplied_ups, [Srcs]),
+    lists:foreach(fun migresia_migrations:execute_up/1, Loaded).
 
 %%------------------------------------------------------------------------------
 
--spec rollback(atom(), integer()) -> ok | {error, any()}.
-rollback(App, Time) ->
-    rollback(migresia_migrations:init_migrations(), App, Time).
+-spec rollback(integer()) -> ok | {error, any()}.
+rollback(Time) ->
+    rollback({rel_relative_dir, default}, Time).
 
-rollback(ok, App, Time) ->
-    io:format("Waiting for tables (max timeout 2 minutes)...", []),
+-spec rollback(migration_sources(), integer()) -> ok | {error, any()}.
+rollback(Srcs, Time) ->
+    try
+        ok = migresia_migrations:init_migrations(),
+        rollback1(Srcs, Time)
+    catch
+        throw:{error, _} = Err -> Err
+    end.
+
+rollback1(Srcs, Time) ->
+    io:format("Waiting for tables (max timeout 2 minutes)...~n", []),
     ok = mnesia:wait_for_tables(mnesia:system_info(tables), 120000),
-    Ups = migresia_migrations:list_all_ups(App),
+    case migresia_migrations:list_all_ups(Srcs) of
+        {error, _} = Err -> Err;
+        Ups -> apply_downs(Srcs, Ups, Time)
+    end.
+
+apply_downs(Srcs, Ups, Time) ->
     %% Load the transform function on all nodes, see:
     %% http://toddhalfpenny.com/2012/05/21/possible-erlang-bad-transform-function-solution/
-    rpc:multicall(nodes(), migresia_migrations, list_all_ups, [App]),
+    rpc:multicall(nodes(), migresia_migrations, list_all_ups, [Srcs]),
     ToRollBack = lists:reverse([X || {_, Ts} = X <- Ups, Ts > Time]),
-    lists:foreach(fun migresia_migrations:execute_down/1, ToRollBack);
-rollback({error, _} = Err, _App, _Time) ->
-    Err.
+    lists:foreach(fun migresia_migrations:execute_down/1, ToRollBack).

@@ -27,19 +27,19 @@
 -export([init_migrations/0,
          list_unapplied_ups/1,
          list_all_ups/1,
+         get_default_dir/0,
          get_priv_dir/1,
          execute_up/1,
          execute_down/1]).
 
--define(DIR, <<"migrate">>).
+-define(DIR, <<"migrations">>).
 -define(TABLE, schema_migrations).
 
--type error() :: {error, any()}.
 -type mod_bin_list() :: [{module(), binary()}].
 
 %%------------------------------------------------------------------------------
 
--spec init_migrations() -> ok | error().
+-spec init_migrations() -> ok.
 init_migrations() ->
     case lists:member(?TABLE, mnesia:system_info(tables)) of
         true ->
@@ -48,39 +48,74 @@ init_migrations() ->
             io:format("Table schema_migration not found, creating...~n", []),
             Attr = [{type, ordered_set}, {disc_copies, migresia:list_nodes()}],
             case mnesia:create_table(?TABLE, Attr) of
-                {atomic, ok}      -> io:format(" => created~n", []), ok;
-                {aborted, Reason} -> {error, Reason}
+                {atomic, ok}      -> io:format(" => created~n", []);
+                {aborted, Reason} -> throw({error, Reason})
             end
     end.
 
 %%------------------------------------------------------------------------------
 
--spec list_unapplied_ups(atom()) -> mod_bin_list() | error().
-list_unapplied_ups(App) ->
+-spec list_unapplied_ups(migresia:migration_sources())
+                        -> mod_bin_list().
+list_unapplied_ups({rel_relative_dir, default}) ->
+    list_unapplied_ups({rel_relative_dir, get_default_dir()});
+list_unapplied_ups({rel_relative_dir, DirName}) ->
+    get_migrations(get_release_dir(DirName));
+list_unapplied_ups(App) when is_atom(App) ->
     get_migrations(get_priv_dir(App)).
 
--spec list_all_ups(atom()) -> mod_bin_list() | error().
-list_all_ups(App) ->
+-spec list_all_ups(migresia:migration_sources()) -> mod_bin_list().
+list_all_ups({rel_relative_dir, default}) ->
+    list_all_ups({rel_relative_dir, get_default_dir()});
+list_all_ups({rel_relative_dir, DirName}) ->
+    get_all_migrations(get_release_dir(DirName));
+list_all_ups(App) when is_atom(App) ->
     get_all_migrations(get_priv_dir(App)).
 
--spec get_priv_dir(atom()) -> string() | binary() | error().
-get_priv_dir(App) ->
-    case application:load(App) of
-        ok ->
-            filename:join(code:priv_dir(App), ?DIR);
-        {error, {already_loaded, App}} ->
-            filename:join(code:priv_dir(App), ?DIR);
-        {error, _} = Err ->
-            Err
+get_default_dir() ->
+    case application:get_env(migresia, rel_relative_dir) of
+        {ok, Val} -> Val;
+        undefined -> ?DIR
     end.
 
--spec get_migrations({error, any()} | binary()) -> mod_bin_list() | error().
-get_migrations({error, _} = Err) ->
-    Err;
+get_release_dir(DirName) ->
+    case filelib:is_dir(DirName) of
+        true -> DirName;
+        false -> try_to_cwd(DirName)
+    end.
+
+try_to_cwd(DirName) ->
+    Root = code:root_dir(),
+    case filelib:is_dir(filename:join(Root, code:lib_dir(migresia))) of
+        true ->
+            file:set_cwd(Root),
+            case filelib:is_dir(DirName) of
+                true -> DirName;
+                false -> throw({error, enoent})
+            end;
+        false -> throw({error, badcwd})
+    end.
+
+-spec get_priv_dir(atom()) -> string() | binary().
+get_priv_dir(App) ->
+    case application:load(App) of
+        ok -> check_priv_dir(App);
+        {error, {already_loaded, App}} -> check_priv_dir(App);
+        {error, _} = Err -> throw(Err)
+    end.
+
+check_priv_dir(App) ->
+    Dir = filename:join(code:priv_dir(App), ?DIR),
+    case filelib:is_dir(Dir) of
+        true -> Dir;
+        false -> throw({error, enoent})
+    end.
+
+-spec get_migrations(binary()) -> mod_bin_list().
 get_migrations(Dir) ->
     ToApply = check_dir(file:list_dir(Dir)),
     case check_table() of
-        {error, _} = Err -> Err;
+        {error, _} = Err -> throw(Err);
         Applied -> compile_and_load(Dir, ToApply, Applied)
     end.
 
@@ -88,10 +123,8 @@ get_all_migrations(Dir) ->
     ToApply = lists:sort(check_dir(file:list_dir(Dir))),
     compile_and_load(Dir, ToApply, []).
 
-check_dir({error, Reason}) ->
-    throw({file, list_dir, Reason});
-check_dir({ok, Filenames}) ->
-    normalize_names(Filenames, []).
+check_dir({error, _} = Err) -> throw(Err);
+check_dir({ok, Filenames}) -> normalize_names(Filenames, []).
 
 normalize_names([<<Short:14/bytes, ".erl">>|T], Acc) ->
     normalize_names(T, [{Short, Short}|Acc]);
@@ -121,10 +154,8 @@ check_table() ->
                     Select = [{{?TABLE,'_','_'},[],['$_']}],
                     List = mnesia:dirty_select(?TABLE, Select),
                     [ X || {?TABLE, X, true} <- List ];
-                {error, _} = Err ->
-                    Err;
-                Error ->
-                    {error, Error}
+                {error, _} = Err -> throw(Err);
+                Error -> throw({error, Error})
             end
     end.
 
@@ -162,17 +193,20 @@ compile_file(Dir, Short, Name) ->
             io:format("Warnings: ~p~n", [Warnings]),
             {Module, Short, Binary};
         {error, Err, Warn} ->
-            io:format("Warnings: ~p~nErrors: ~p~nAborting...~n", [Warn, Err]),
-            throw({compile, compile_error, Err});
+            io:format("Errors: ~p~nWarnings: ~p~nAborting...~n", [Err, Warn]),
+            throw({error, compile_error});
         error ->
-            io:format("Unknown error encoutered, Aborting...~n", []),
-            throw({compile, unknown_error, File})
+            io:format("Errors encoutered, Aborting...~n", []),
+            throw({error, compile_error})
     end.
 
 load_migration(Module, Short, Binary) ->
     case code:load_binary(Module, Module, Binary) of
-        {module, Module} -> {Module, Short};
-        {error, What} -> throw({code, load_binary, What})
+        {module, Module} ->
+            {Module, Short};
+        {error, _} = Err ->
+            io:format("Error when loading module '~p'.~n", [Module]),
+            throw(Err)
     end.
 
 %%------------------------------------------------------------------------------
