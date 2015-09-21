@@ -3,16 +3,7 @@ Migresia
 
 A simple Erlang tool to automatically migrate Mnesia databases between versions. It's loosely based on Active Record Migrations from Ruby on Rails.
 
-### Main Variations In This Fork
-This fork contains four main differences from yoonka's:
-
-1. All main functions now require an application name. This is to keep source files tied to applications, and allow them to be version controlled separately from each other and the Migresia dependency.
-
-2. Functions have largely been re-written to return values, rather than simply print or throw. 
-
-3. Multiple nodes are supported. check/1 will return the list of migrations still to be run so long as Mnesia knows itself to be consistent. migrate/1 will perform migrations across distributed nodes provided all of them are up at the time it is called; it will return an error if any nodes are down.
-
-4. The function create_new_migration/2 was added to make creating timestamped files a bit easier.
+Multiple nodes are supported. Function check/1 will return the list of migrations still to be run so long as Mnesia knows itself to be consistent. Function migrate/1 will perform migrations across distributed nodes provided all of them are up at the time it is called; it will return an error if any nodes are down.
 
 ## How it works
 
@@ -33,11 +24,11 @@ Migresia stores all applied migrations in table `schema_migrations` which it cre
 
 ## Migrations
 
-Each migration is an Erlang source `*.erl` file stored  in folder `priv/migrate/`, under a given application.
+Each migration is an Erlang source `*.erl` file stored in folder `priv/migrations/`, under a given application, or in a folder configured with application environment option: `rel_relative_dir`.
 
 Migresia compiles the migrations automatically when it applies them, so they should be always distributed as source files. This is mainly to allow keeping applied migrations under a version control but not have to compile them every time when building the application or creating a release.
 
-When developing a new migration just use  `migresia:check/1` to let Migresia try to compile them and report any problems.
+When developing a new migration just use `migresia:check/1` to let Migresia try to compile them and report any problems.
 
 #### Migration names
 
