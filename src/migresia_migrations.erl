@@ -25,15 +25,19 @@
 -module(migresia_migrations).
 
 -export([init_migrations/0,
+         list_migrations/0,
          list_unapplied_ups/1,
-         list_all_ups/1,
+         list_applied_ups/2,
          get_default_dir/0,
          get_priv_dir/1,
+         get_ts_before_last/0,
          execute_up/1,
          execute_down/1]).
 
 -define(DIR, <<"migrations">>).
 -define(TABLE, schema_migrations).
+%% Surely no migrations before the first commit in migresia
+-define(FIRST_TS, 20130404041545).
 
 -type mod_bin_list() :: [{module(), binary()}].
 
@@ -53,24 +57,27 @@ init_migrations() ->
             end
     end.
 
+list_migrations() ->
+    mnesia:dirty_all_keys(?TABLE).
+
 %%------------------------------------------------------------------------------
 
--spec list_unapplied_ups(migresia:migration_sources())
-                        -> mod_bin_list().
+-spec list_unapplied_ups(migresia:migration_sources()) -> mod_bin_list().
 list_unapplied_ups({rel_relative_dir, default}) ->
     list_unapplied_ups({rel_relative_dir, get_default_dir()});
 list_unapplied_ups({rel_relative_dir, DirName}) ->
-    get_migrations(get_release_dir(DirName));
+    get_unapplied(get_release_dir(DirName));
 list_unapplied_ups(App) when is_atom(App) ->
-    get_migrations(get_priv_dir(App)).
+    get_unapplied(get_priv_dir(App)).
 
--spec list_all_ups(migresia:migration_sources()) -> mod_bin_list().
-list_all_ups({rel_relative_dir, default}) ->
-    list_all_ups({rel_relative_dir, get_default_dir()});
-list_all_ups({rel_relative_dir, DirName}) ->
-    get_all_migrations(get_release_dir(DirName));
-list_all_ups(App) when is_atom(App) ->
-    get_all_migrations(get_priv_dir(App)).
+-spec list_applied_ups(migresia:migration_sources(), integer()) ->
+                              mod_bin_list().
+list_applied_ups({rel_relative_dir, default}, Time) ->
+    list_applied_ups({rel_relative_dir, get_default_dir()}, Time);
+list_applied_ups({rel_relative_dir, DirName}, Time) ->
+    get_applied(get_release_dir(DirName), Time);
+list_applied_ups(App, Time) when is_atom(App) ->
+    get_applied(get_priv_dir(App), Time).
 
 get_default_dir() ->
     case application:get_env(migresia, rel_relative_dir) of
@@ -111,23 +118,37 @@ check_priv_dir(App) ->
         false -> throw({error, enoent})
     end.
 
--spec get_migrations(binary()) -> mod_bin_list().
-get_migrations(Dir) ->
-    ToApply = check_dir(file:list_dir(Dir)),
+-spec get_unapplied(binary()) -> mod_bin_list().
+get_unapplied(Dir) ->
+    load_migrations(Dir, fun list_unapplied/2).
+
+-spec get_applied(binary(), integer()) -> mod_bin_list().
+get_applied(Dir, Time) ->
+    load_migrations(Dir, fun(X, Y) -> list_applied(X, Y, Time) end).
+
+list_unapplied(FromDir, FromDB) ->
+    Unapplied = [X || {Ts, _} = X <- FromDir,
+                      length(FromDB) =:= 0 orelse Ts > lists:max(FromDB)],
+    lists:keysort(1, Unapplied).
+
+list_applied(FromDir, FromDB, Time) ->
+    Applied = [X || {Ts, _} = X <- FromDir,
+                    lists:member(Ts, FromDB), Ts > Time],
+    lists:reverse(lists:keysort(1, Applied)).
+
+load_migrations(Dir, FilterFun) ->
+    Migrations = check_dir(file:list_dir(Dir)),
     case check_table() of
         {error, _} = Err -> throw(Err);
-        Applied -> compile_and_load(Dir, ToApply, Applied)
+        Applied -> compile_and_load(Dir, FilterFun, Migrations, Applied)
     end.
-
-get_all_migrations(Dir) ->
-    ToApply = lists:sort(check_dir(file:list_dir(Dir))),
-    compile_and_load(Dir, ToApply, []).
 
 check_dir({error, _} = Err) -> throw(Err);
 check_dir({ok, Filenames}) -> normalize_names(Filenames, []).
 
 normalize_names([<<Short:14/bytes, ".erl">>|T], Acc) ->
-    normalize_names(T, [{Short, Short}|Acc]);
+    Int = list_to_integer(binary_to_list(Short)),
+    normalize_names(T, [{Int, Short}|Acc]);
 normalize_names([<<Short:14/bytes, $_, R/binary>> = Name|T], Acc)
   when size(R) >= 4
        andalso erlang:binary_part(R, size(R) - 4, 4) == <<".erl">> ->
@@ -159,29 +180,15 @@ check_table() ->
             end
     end.
 
-compile_and_load(Dir, ToApply, Applied) ->
-    ToExecute = compile_unapplied(Dir, ToApply, Applied, []),
-    Fun = fun({Module, Short, Binary}) ->
-                  load_migration(Module, Short, Binary)
-          end,
-    lists:map(Fun, ToExecute).
+compile_and_load(Dir, FilterFun, ToApply, Applied) ->
+    ToLoad = FilterFun(ToApply, Applied),
+    lists:map(fun(X) -> compile_and_load1(Dir, X) end, ToLoad).
+
+compile_and_load1(Dir, {Short, Name}) ->
+    {Module, Short, Binary} = compile_file(Dir, Short, Name),
+    load_migration(Module, Short, Binary).
 
 %%------------------------------------------------------------------------------
-
-compile_unapplied(Dir, [{Short, Module}|TN], [] = Old, Acc) ->
-    compile_unapplied(Dir, TN, Old, [compile_file(Dir, Short, Module)|Acc]);
-compile_unapplied(Dir, [{Last, _}|TN], [Last], Acc) ->
-    compile_unapplied(Dir, TN, [], Acc);
-compile_unapplied(Dir, [{Last, _}], [Last|_TO], Acc) ->
-    compile_unapplied(Dir, [], [], Acc);
-compile_unapplied(Dir, [{Short, _}|TN], [Short|TO], Acc) ->
-    compile_unapplied(Dir, TN, TO, Acc);
-compile_unapplied(Dir, [{New, _}|TN], [Old|_] = Applied, Acc) when New < Old ->
-    compile_unapplied(Dir, TN, Applied, Acc);
-compile_unapplied(Dir, [{New, _}|_] = ToApply, [Old|TO], Acc) when New > Old ->
-    compile_unapplied(Dir, ToApply, TO, Acc);
-compile_unapplied(_Dir, [], _, Acc) ->
-    lists:reverse(Acc).
 
 compile_file(Dir, Short, Name) ->
     File = filename:join(Dir, Name),
@@ -196,7 +203,7 @@ compile_file(Dir, Short, Name) ->
             io:format("Errors: ~p~nWarnings: ~p~nAborting...~n", [Err, Warn]),
             throw({error, compile_error});
         error ->
-            io:format("Errors encoutered, Aborting...~n", []),
+            io:format("Errors encountered, Aborting...~n", []),
             throw({error, compile_error})
     end.
 
@@ -208,6 +215,18 @@ load_migration(Module, Short, Binary) ->
             io:format("Error when loading module '~p'.~n", [Module]),
             throw(Err)
     end.
+
+%%------------------------------------------------------------------------------
+
+get_ts_before_last() ->
+    case lists:member(?TABLE, mnesia:system_info(tables)) of
+        true -> get_ts_bef_last1(mnesia:dirty_all_keys(?TABLE));
+        false -> ?FIRST_TS
+    end.
+
+get_ts_bef_last1([]) -> ?FIRST_TS;
+get_ts_bef_last1([TS]) -> TS - 1;
+get_ts_bef_last1(List) -> hd(tl(lists:reverse(List))).
 
 %%------------------------------------------------------------------------------
 

@@ -25,13 +25,16 @@
 -module(migresia).
 
 -export([start_all_mnesia/0,
+         list_nodes/0,
+         list_migrations/0,
          ensure_started/1,
          check/1,
          migrate/0,
          migrate/1,
          rollback/1,
          rollback/2,
-         list_nodes/0]).
+         rollback_last/0,
+         rollback_last/1]).
 
 %%------------------------------------------------------------------------------
 
@@ -48,6 +51,9 @@ start_all_mnesia() ->
 
 list_nodes() -> 
     mnesia:table_info(schema, disc_copies).
+
+list_migrations() ->
+    migresia_migrations:list_migrations().
 
 ensure_started_on_remotes(Nodes) ->
     io:format("Ensuring Mnesia is running on nodes:~n~p~n", [Nodes]),
@@ -131,14 +137,21 @@ rollback(Srcs, Time) ->
 rollback1(Srcs, Time) ->
     io:format("Waiting for tables (max timeout 2 minutes)...~n", []),
     ok = mnesia:wait_for_tables(mnesia:system_info(tables), 120000),
-    case migresia_migrations:list_all_ups(Srcs) of
+    case migresia_migrations:list_applied_ups(Srcs, Time) of
         {error, _} = Err -> Err;
         Ups -> apply_downs(Srcs, Ups, Time)
     end.
 
-apply_downs(Srcs, Ups, Time) ->
+apply_downs(Srcs, Loaded, Time) ->
     %% Load the transform function on all nodes, see:
     %% http://toddhalfpenny.com/2012/05/21/possible-erlang-bad-transform-function-solution/
-    rpc:multicall(nodes(), migresia_migrations, list_all_ups, [Srcs]),
-    ToRollBack = lists:reverse([X || {_, Ts} = X <- Ups, Ts > Time]),
-    lists:foreach(fun migresia_migrations:execute_down/1, ToRollBack).
+    rpc:multicall(nodes(), migresia_migrations, list_applied_ups, [Srcs, Time]),
+    lists:foreach(fun migresia_migrations:execute_down/1, Loaded).
+
+%%------------------------------------------------------------------------------
+
+-spec rollback_last() -> ok | {error, any()}.
+rollback_last() -> rollback(migresia_migrations:get_ts_before_last()).
+
+-spec rollback_last(migration_sources()) -> ok | {error, any()}.
+rollback_last(Srcs) -> rollback(Srcs, migresia_migrations:get_ts_before_last()).
