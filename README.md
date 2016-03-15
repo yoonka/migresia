@@ -40,7 +40,7 @@ The timestamp is always 14 numbers, but otherwise can contain any value. Migresi
 
 The remaining part of the name, after the timestamp, is simply ignored. A migration name consisting of just the timestamp is also a valid name.
 
-You can generate a timestamped stub using `migresia:create_new_migration/2`
+You can generate a timestamped stub using `./priv/new_migration.esh test_message`
 
 #### Implementing migrations
 
@@ -66,12 +66,7 @@ Very often migrations need to know the record definitions of Mnesia tables to wh
 
 ## API Calls
 
-Migresia exports 6 functions. All functions can take an optional first parameter of an application name (as an atom) if you want your migrations to be under your application rather than Migresia:
-
-
-##### `migresia:create_new_migration/2`
-
-Creates a stubbed out migration file for you. The last argument is the name you want appended after the timestamp. No validation or checking occurs on this, so it should generally avoid spaces and punctuation.
+Migresia exports 5 functions. All functions can take an optional first parameter of an application name (as an atom) if you want your migrations to be under your application rather than Migresia:
 
 ##### `migresia:check/1`
 
